@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tetris 8-Bit - Full Container & Correct Proportions</title>
+  <!-- Use a retro 8-bit style font -->
+  <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+  <style>
+    /* Basic page styling */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #0f0;
+      font-family: 'Press Start 2P', monospace;
+      height: 100%;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    h1 {
+      margin-top: 1rem;
+      font-size: 1.5rem;
+      text-align: center;
+    }
+
+    /* Container for everything */
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    /* Scoreboard and user controls */
+    #scoreboard {
+      margin: 0.5rem 0;
+      text-align: center;
+      font-size: 0.8rem;
+    }
+    #user-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    #user-controls input,
+    #user-controls button {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.7rem;
+      padding: 0.3rem;
+      background: #111;
+      color: #0f0;
+      border: 2px solid #0f0;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /*
+      Main game container:
+      - 80% of the viewport height (maximum)
+      - We'll fill it completely with our canvas
+    */
+    #game-container {
+      height: 80vh;
+      border: 2px solid #0f0;
+      box-sizing: border-box;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /*
+      The canvas will be sized to fill the container.
+      Internally, we'll do a "transform" so that the Tetris board
+      is always drawn at a 1:2 ratio (300x600).
+      This ensures pieces are not distorted when rotating.
+    */
+    #tetris {
+      width: 100%;
+      height: 100%;
+      background: #111;
+      display: block;
+    }
+
+    /* Game Over overlay */
+    #game-over {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      border: 2px solid #0f0;
+      color: #0f0;
+      font-size: 0.8rem;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      flex-direction: column;
+    }
+    #game-over button {
+      margin-top: 0.5rem;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.7rem;
+      padding: 0.3rem;
+      background: #111;
+      color: #0f0;
+      border: 2px solid #0f0;
+      outline: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Tetris 8-Bit</h1>
+
+    <div id="scoreboard">
+      Current Score: <span id="score">0</span> <br>
+      Best Score: <span id="best-score">0</span> by <span id="best-user">N/A</span>
+    </div>
+
+    <div id="user-controls">
+      <button id="restart-button">Restart</button>
+    </div>
+
+    <div id="game-container">
+      <!-- The canvas fills #game-container, but we transform the drawing so it always appears 300x600 internally. -->
+      <canvas id="tetris" width="300" height="600"></canvas>
+      <div id="game-over">
+        <div>GAME OVER</div>
+        <button id="game-over-restart">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /*
+      Tetris Implementation Notes:
+      - The internal board is 10x20 cells, with each cell 30px.
+      - The canvas is scaled via CSS to fill the container.
+      - Uses rotateMatrix() for correct rotation of rectangular tetromino matrices.
+      - Arrow keys: Left/Right to move, Up to rotate, Down to drop faster.
+      - Best score is saved in localStorage.
+      - At game over, if a new high score was set during that game, the player is prompted for their name.
+    */
+
+    let bestScore = parseInt(localStorage.getItem('tetrisBestScore') || '0', 10);
+    let bestUser = localStorage.getItem('tetrisBestUser') || 'N/A';
+
+    document.getElementById('best-score').textContent = bestScore;
+    document.getElementById('best-user').textContent = bestUser;
+
+    const canvas = document.getElementById('tetris');
+    const context = canvas.getContext('2d');
+
+    // Board dimensions: 10 columns x 20 rows, each cell is 30 pixels (300x600 internal resolution)
+    const cols = 10;
+    const rows = 20;
+    const cellSize = 30;
+
+    // The "arena" (game board) data
+    const arena = createMatrix(cols, rows);
+
+    // The player object
+    const player = {
+      pos: { x: 0, y: 0 },
+      matrix: null,
+      score: 0,
+      name: 'Anonymous',
+    };
+
+    // Tetromino shapes (note: many are not square)
+    const tetrominoes = [
+      // T
+      [
+        [0, 0, 0],
+        [1, 1, 1],
+        [0, 1, 0],
+      ],
+      // O
+      [
+        [2, 2],
+        [2, 2],
+      ],
+      // L
+      [
+        [0, 3],
+        [0, 3],
+        [0, 3],
+        [3, 3],
+      ],
+      // J
+      [
+        [4, 0],
+        [4, 0],
+        [4, 0],
+        [4, 4],
+      ],
+      // S
+      [
+        [0, 5, 5],
+        [5, 5, 0],
+        [0, 0, 0],
+      ],
+      // Z
+      [
+        [6, 6, 0],
+        [0, 6, 6],
+        [0, 0, 0],
+      ],
+      // I
+      [
+        [7],
+        [7],
+        [7],
+        [7],
+      ],
+    ];
+
+    // Colors for each tetromino ID
+    const colors = [
+      null,
+      '#FF0D72', // T
+      '#0DC2FF', // O
+      '#0DFF72', // L
+      '#F538FF', // J
+      '#FF8E0D', // S
+      '#3877FF', // Z
+      '#FFFF00', // I
+    ];
+
+    // Timers and game state
+    let dropCounter = 0;
+    let dropInterval = 500; // milliseconds
+    let lastTime = 0;
+    let gameIsOver = false;
+
+    /**
+     * Create a matrix (2D array) of w columns and h rows, filled with 0.
+     */
+    function createMatrix(w, h) {
+      const matrix = [];
+      while (h--) {
+        matrix.push(new Array(w).fill(0));
+      }
+      return matrix;
+    }
+
+    /**
+     * Check if the player's piece collides with the arena blocks.
+     */
+    function collide(arena, player) {
+      const [m, o] = [player.matrix, player.pos];
+      for (let y = 0; y < m.length; ++y) {
+        for (let x = 0; x < m[y].length; ++x) {
+          if (m[y][x] !== 0) {
+            if (!arena[o.y + y] || arena[o.y + y][o.x + x] !== 0) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    /**
+     * Merge the player's piece into the arena (board).
+     */
+    function merge(arena, player) {
+      player.matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value !== 0) {
+            arena[y + player.pos.y][x + player.pos.x] = value;
+          }
+        });
+      });
+    }
+
+    /**
+     * Clear full rows in the arena and increase score.
+     */
+    function arenaSweep() {
+      let rowCount = 1;
+      outer: for (let y = rows - 1; y >= 0; --y) {
+        for (let x = 0; x < cols; ++x) {
+          if (arena[y][x] === 0) {
+            continue outer;
+          }
+        }
+        // The row is full; remove it.
+        const removed = arena.splice(y, 1)[0].fill(0);
+        arena.unshift(removed);
+        ++y;
+        // Increase score
+        player.score += rowCount * 10;
+        rowCount *= 2;
+      }
+    }
+
+    /**
+     * Draw the game, preserving a 300x600 internal aspect ratio using transform.
+     */
+    function draw() {
+      // Clear the canvas in actual device pixels
+      context.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Save current transformation
+      context.save();
+
+      // Determine displayed canvas size in CSS pixels
+      const actualWidth = canvas.clientWidth;
+      const actualHeight = canvas.clientHeight;
+
+      // Calculate uniform scale so that a 300x600 area fits entirely
+      const scaleX = actualWidth / (cols * cellSize);
+      const scaleY = actualHeight / (rows * cellSize);
+      const scale = Math.min(scaleX, scaleY);
+
+      // Calculate offsets to center the board
+      const offsetX = (actualWidth - (cols * cellSize) * scale) / 2;
+      const offsetY = (actualHeight - (rows * cellSize) * scale) / 2;
+
+      context.translate(offsetX, offsetY);
+      context.scale(scale, scale);
+
+      // Draw the black background for the board
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, cols * cellSize, rows * cellSize);
+
+      // Draw arena and player's piece
+      drawMatrix(arena, { x: 0, y: 0 });
+      drawMatrix(player.matrix, player.pos);
+
+      // Restore transform
+      context.restore();
+    }
+
+    /**
+     * Draw a matrix (tetromino or arena) in the 300x600 coordinate system.
+     */
+    function drawMatrix(matrix, offset) {
+      matrix.forEach((row, y) => {
+        row.forEach((value, x) => {
+          if (value !== 0) {
+            context.fillStyle = colors[value];
+            context.fillRect(
+              (x + offset.x) * cellSize,
+              (y + offset.y) * cellSize,
+              cellSize,
+              cellSize
+            );
+          }
+        });
+      });
+    }
+
+    /**
+     * Move the player's piece down by one row.
+     */
+    function playerDrop() {
+      player.pos.y++;
+      if (collide(arena, player)) {
+        player.pos.y--;
+        merge(arena, player);
+        playerReset();
+        arenaSweep();
+        updateScore();
+      }
+      dropCounter = 0;
+    }
+
+    /**
+     * Move the player's piece horizontally.
+     */
+    function playerMove(dir) {
+      player.pos.x += dir;
+      if (collide(arena, player)) {
+        player.pos.x -= dir;
+      }
+    }
+
+    /**
+     * Spawn a new random piece at the top and center it horizontally.
+     */
+    function playerReset() {
+      const rand = Math.floor(Math.random() * tetrominoes.length);
+      player.matrix = tetrominoes[rand].map(row => row.slice());
+
+      // Position at the top, centered horizontally
+      player.pos.y = 0;
+      player.pos.x = (cols / 2 | 0) - (player.matrix[0].length / 2 | 0);
+
+      // If the new piece collides immediately, end the game.
+      if (collide(arena, player)) {
+        endGame();
+      }
+    }
+
+    /**
+     * Rotate the current piece.
+     * Uses rotateMatrix() to handle rectangular matrices.
+     */
+    function playerRotate(dir) {
+      const pos = player.pos.x;
+      const oldMatrix = player.matrix;
+      const newMatrix = rotateMatrix(player.matrix, dir);
+      player.matrix = newMatrix;
+      let offset = 1;
+      while (collide(arena, player)) {
+        player.pos.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (Math.abs(offset) > newMatrix[0].length) {
+          // Revert to the old matrix if no valid position is found.
+          player.matrix = oldMatrix;
+          player.pos.x = pos;
+          return;
+        }
+      }
+    }
+
+    /**
+     * Rotate a matrix (tetromino) and return a new rotated matrix.
+     * Works for rectangular matrices.
+     *
+     * For clockwise rotation (dir > 0):
+     *   result[i][j] = matrix[m - 1 - j][i]
+     *
+     * For counterclockwise rotation (dir < 0):
+     *   result[i][j] = matrix[j][n - 1 - i]
+     */
+    function rotateMatrix(matrix, dir) {
+      const m = matrix.length;
+      const n = matrix[0].length;
+      const result = [];
+      if (dir > 0) {
+        // Clockwise rotation: dimensions become n x m.
+        for (let i = 0; i < n; i++) {
+          result[i] = [];
+          for (let j = 0; j < m; j++) {
+            result[i][j] = matrix[m - 1 - j][i];
+          }
+        }
+      } else {
+        // Counterclockwise rotation: dimensions become n x m.
+        for (let i = 0; i < n; i++) {
+          result[i] = [];
+          for (let j = 0; j < m; j++) {
+            result[i][j] = matrix[j][n - 1 - i];
+          }
+        }
+      }
+      return result;
+    }
+
+    /**
+     * Main update loop.
+     */
+    function update(time = 0) {
+      if (gameIsOver) return;
+      const deltaTime = time - lastTime;
+      lastTime = time;
+
+      dropCounter += deltaTime;
+      if (dropCounter > dropInterval) {
+        playerDrop();
+      }
+
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    /**
+     * Update the displayed score.
+     */
+    function updateScore() {
+      document.getElementById('score').innerText = player.score;
+    }
+
+    /**
+     * End the game.
+     * If a new high score was set during that game, prompt for the player's name.
+     */
+    function endGame() {
+      gameIsOver = true;
+      // Ask for the player's name only if they achieved a new high score during that game.
+      if (player.score > bestScore) {
+        const newName = window.prompt("New High Score! Enter your name:");
+        player.name = (newName && newName.trim().length > 0) ? newName.trim() : "Anonymous";
+        bestScore = player.score;
+        bestUser = player.name;
+        localStorage.setItem('tetrisBestScore', bestScore);
+        localStorage.setItem('tetrisBestUser', bestUser);
+      }
+      document.getElementById('best-score').textContent = bestScore;
+      document.getElementById('best-user').textContent = bestUser;
+      document.getElementById('game-over').style.display = 'flex';
+    }
+
+    /**
+     * Start or restart the game.
+     */
+    function startGame() {
+      gameIsOver = false;
+      arena.forEach(row => row.fill(0));
+      player.score = 0;
+      updateScore();
+      document.getElementById('game-over').style.display = 'none';
+      playerReset();
+      dropCounter = 0;
+      lastTime = 0;
+      requestAnimationFrame(update);
+    }
+
+    /* Keyboard events */
+    document.addEventListener('keydown', event => {
+      if (gameIsOver) return;
+      switch (event.key) {
+        case 'ArrowLeft':
+          playerMove(-1);
+          break;
+        case 'ArrowRight':
+          playerMove(1);
+          break;
+        case 'ArrowDown':
+          playerDrop();
+          break;
+        case 'ArrowUp':
+          playerRotate(1);
+          break;
+      }
+    });
+
+    /* Button events */
+
+
+    document.getElementById('restart-button').addEventListener('click', () => {
+      startGame();
+    });
+
+    document.getElementById('game-over-restart').addEventListener('click', () => {
+      startGame();
+    });
+
+    /* Resize listener: update the canvas's internal dimensions to match its displayed size */
+    window.addEventListener('resize', () => {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      draw();
+    });
+
+    /* Initialize the canvas internal size to match its client size */
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+
+    /* Start the game */
+    startGame();
+  </script>
+</body>
+</html>
