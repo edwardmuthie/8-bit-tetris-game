@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tetris 8-Bit</title>
+  <link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #0f0;
+      font-family: 'Press Start 2P', monospace;
+      height: 100%;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    h1 {
+      margin-top: 1rem;
+      font-size: 1.5rem;
+      text-align: center;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    #scoreboard {
+      margin: 0.5rem 0;
+      text-align: center;
+      font-size: 0.8rem;
+    }
+
+    #user-controls {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    #user-controls button {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.7rem;
+      padding: 0.3rem;
+      background: #111;
+      color: #0f0;
+      border: 2px solid #0f0;
+      outline: none;
+      cursor: pointer;
+    }
+
+    #game-container {
+      height: 80vh;
+      border: 2px solid #0f0;
+      box-sizing: border-box;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #tetris {
+      width: 100%;
+      height: 100%;
+      background: #111;
+      display: block;
+    }
+
+    #game-over {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      border: 2px solid #0f0;
+      color: #0f0;
+      font-size: 0.8rem;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      flex-direction: column;
+    }
+
+    #game-over button {
+      margin-top: 0.5rem;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 0.7rem;
+      padding: 0.3rem;
+      background: #111;
+      color: #0f0;
+      border: 2px solid #0f0;
+      outline: none;
+      cursor: pointer;
+    }
+
+    #name-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      color: #0f0;
+      font-family: 'Press Start 2P', monospace;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    #name-modal .modal-content {
+      background: #111;
+      border: 2px solid #0f0;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    #name-modal input {
+      font-family: 'Press Start 2P', monospace;
+      background: #000;
+      color: #0f0;
+      border: 2px solid #0f0;
+      padding: 0.5rem;
+      width: 80%;
+      margin-top: 1rem;
+    }
+
+    #name-modal button {
+      font-family: 'Press Start 2P', monospace;
+      background: #111;
+      color: #0f0;
+      border: 2px solid #0f0;
+      margin-top: 1rem;
+      padding: 0.3rem 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>Tetris 8-Bit</h1>
+    <div id="scoreboard">
+      Current Score: <span id="score">0</span> <br>
+      Best Score: <span id="best-score">0</span> by <span id="best-user">N/A</span>
+    </div>
+    <div id="user-controls">
+      <button id="restart-button">Restart</button>
+    </div>
+    <div id="game-container">
+      <canvas id="tetris" width="300" height="600"></canvas>
+      <div id="game-over">
+        <div>GAME OVER</div>
+        <button id="game-over-restart">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="name-modal">
+    <div class="modal-content">
+      <div>NEW HIGH SCORE!</div>
+      <input type="text" id="player-name" placeholder="Enter Name">
+      <br>
+      <button onclick="submitName()">Submit</button>
+    </div>
+  </div>
+
+  <script>
+    const nameModal = document.getElementById('name-modal');
+    const nameInput = document.getElementById('player-name');
+    let onNameSubmit = null;
+
+    function submitName() {
+      const name = nameInput.value.trim() || 'Anonymous';
+      if (onNameSubmit) onNameSubmit(name);
+      nameModal.style.display = 'none';
+    }
+
+    function showNameModal(callback) {
+      nameModal.style.display = 'flex';
+      nameInput.value = '';
+      nameInput.focus();
+      onNameSubmit = callback;
+    }
+
+    let bestScore = parseInt(localStorage.getItem('tetrisBestScore') || '0', 10);
+    let bestUser = localStorage.getItem('tetrisBestUser') || 'N/A';
+
+    document.getElementById('best-score').textContent = bestScore;
+    document.getElementById('best-user').textContent = bestUser;
+
+    const canvas = document.getElementById('tetris');
+    const context = canvas.getContext('2d');
+
+    const cols = 10, rows = 20, cellSize = 30;
+    const arena = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+    const player = {
+      pos: { x: 0, y: 0 },
+      matrix: null,
+      score: 0,
+      name: 'Anonymous'
+    };
+
+    const tetrominoes = [ [[0,0,0],[1,1,1],[0,1,0]], [[2,2],[2,2]], [[0,3],[0,3],[0,3],[3,3]],
+                          [[4,0],[4,0],[4,0],[4,4]], [[0,5,5],[5,5,0],[0,0,0]], [[6,6,0],[0,6,6],[0,0,0]], [[7],[7],[7],[7]] ];
+    const colors = [ null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#3877FF', '#FFFF00' ];
+
+    let dropCounter = 0, dropInterval = 500, lastTime = 0, gameIsOver = false;
+
+    function collide(arena, player) {
+      const [m, o] = [player.matrix, player.pos];
+      for (let y = 0; y < m.length; ++y)
+        for (let x = 0; x < m[y].length; ++x)
+          if (m[y][x] !== 0 && (!arena[y + o.y] || arena[y + o.y][x + o.x] !== 0)) return true;
+      return false;
+    }
+
+    function merge(arena, player) {
+      player.matrix.forEach((row, y) => row.forEach((value, x) => {
+        if (value !== 0) arena[y + player.pos.y][x + player.pos.x] = value;
+      }));
+    }
+
+    function arenaSweep() {
+      let rowCount = 1;
+      outer: for (let y = rows - 1; y >= 0; --y) {
+        for (let x = 0; x < cols; ++x)
+          if (arena[y][x] === 0) continue outer;
+        arena.splice(y, 1);
+        arena.unshift(Array(cols).fill(0));
+        player.score += rowCount * 10;
+        rowCount *= 2;
+      }
+    }
+
+    function draw() {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.save();
+      const scale = Math.min(canvas.clientWidth / (cols * cellSize), canvas.clientHeight / (rows * cellSize));
+      context.translate((canvas.clientWidth - cols * cellSize * scale) / 2, (canvas.clientHeight - rows * cellSize * scale) / 2);
+      context.scale(scale, scale);
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, cols * cellSize, rows * cellSize);
+      drawMatrix(arena, { x: 0, y: 0 });
+      drawMatrix(player.matrix, player.pos);
+      context.restore();
+    }
+
+    function drawMatrix(matrix, offset) {
+      matrix.forEach((row, y) => row.forEach((value, x) => {
+        if (value !== 0) {
+          context.fillStyle = colors[value];
+          context.fillRect((x + offset.x) * cellSize, (y + offset.y) * cellSize, cellSize, cellSize);
+        }
+      }));
+    }
+
+    function playerDrop() {
+      player.pos.y++;
+      if (collide(arena, player)) {
+        player.pos.y--;
+        merge(arena, player);
+        playerReset();
+        arenaSweep();
+        updateScore();
+      }
+      dropCounter = 0;
+    }
+
+    function playerMove(dir) {
+      player.pos.x += dir;
+      if (collide(arena, player)) player.pos.x -= dir;
+    }
+
+    function playerReset() {
+      player.matrix = tetrominoes[Math.floor(Math.random() * tetrominoes.length)].map(r => r.slice());
+      player.pos.y = 0;
+      player.pos.x = (cols / 2 | 0) - (player.matrix[0].length / 2 | 0);
+      if (collide(arena, player)) endGame();
+    }
+
+    function playerRotate(dir) {
+      const pos = player.pos.x, oldMatrix = player.matrix;
+      const rotated = rotateMatrix(player.matrix, dir);
+      player.matrix = rotated;
+      let offset = 1;
+      while (collide(arena, player)) {
+        player.pos.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (Math.abs(offset) > rotated[0].length) {
+          player.matrix = oldMatrix;
+          player.pos.x = pos;
+          return;
+        }
+      }
+    }
+
+    function rotateMatrix(matrix, dir) {
+      const m = matrix.length, n = matrix[0].length, result = [];
+      for (let i = 0; i < n; i++) {
+        result[i] = [];
+        for (let j = 0; j < m; j++) {
+          result[i][j] = dir > 0 ? matrix[m - 1 - j][i] : matrix[j][n - 1 - i];
+        }
+      }
+      return result;
+    }
+
+    function update(time = 0) {
+      if (gameIsOver) return;
+      const deltaTime = time - lastTime;
+      lastTime = time;
+      dropCounter += deltaTime;
+      if (dropCounter > dropInterval) playerDrop();
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    function updateScore() {
+      document.getElementById('score').innerText = player.score;
+    }
+
+    function endGame() {
+      gameIsOver = true;
+      if (player.score > bestScore) {
+        showNameModal(name => {
+          player.name = name;
+          bestScore = player.score;
+          bestUser = player.name;
+          localStorage.setItem('tetrisBestScore', bestScore);
+          localStorage.setItem('tetrisBestUser', bestUser);
+          document.getElementById('best-score').textContent = bestScore;
+          document.getElementById('best-user').textContent = bestUser;
+          document.getElementById('game-over').style.display = 'flex';
+        });
+      } else {
+        document.getElementById('game-over').style.display = 'flex';
+      }
+    }
+
+    function startGame() {
+      gameIsOver = false;
+      arena.forEach(row => row.fill(0));
+      player.score = 0;
+      updateScore();
+      document.getElementById('game-over').style.display = 'none';
+      playerReset();
+      dropCounter = 0;
+      lastTime = 0;
+      requestAnimationFrame(update);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (gameIsOver) return;
+      if (e.key === 'ArrowLeft') playerMove(-1);
+      else if (e.key === 'ArrowRight') playerMove(1);
+      else if (e.key === 'ArrowDown') playerDrop();
+      else if (e.key === 'ArrowUp') playerRotate(1);
+    });
+
+    document.getElementById('restart-button').addEventListener('click', startGame);
+    document.getElementById('game-over-restart').addEventListener('click', startGame);
+    window.addEventListener('resize', () => {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      draw();
+    });
+
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+    startGame();
+  </script>
+</body>
+</html>
