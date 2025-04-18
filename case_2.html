@@ -247,10 +247,16 @@
     function arenaSweep() {
       let rowCount = 1;
       outer: for (let y = rows - 1; y >= 0; --y) {
-        for (let x = 0; x < cols; ++x)
-          if (arena[y][x] === 0) continue outer;
-        arena.splice(y, 1);
-        arena.unshift(Array(cols).fill(0));
+        for (let x = 0; x < cols; ++x) {
+          if (arena[y][x] === 0) {
+            continue outer;
+          }
+        }
+        // The row is full; remove it.
+        const removed = arena.splice(y, 1)[0].fill(0);
+        arena.unshift(removed);
+        ++y;
+        // Increase score
         player.score += rowCount * 10;
         rowCount *= 2;
       }
