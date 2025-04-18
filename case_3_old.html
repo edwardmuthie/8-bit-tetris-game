@@ -25,16 +25,6 @@
       text-align: center;
     }
 
-    .glow {
-      color: #0f0;
-      text-shadow:
-        0 0 0px  #0f0,
-        0 0 1px  #0f0,
-        0 0 2px #0f0,
-        0 0 3px #0f0;
-      animation: flicker 1.3s infinite alternate;
-      }
-
     #container {
       display: flex;
       flex-direction: column;
@@ -66,7 +56,7 @@
     }
 
     #game-container {
-      height: 65vh;
+      height: 80vh;
       border: 2px solid #0f0;
       box-sizing: border-box;
       position: relative;
@@ -152,17 +142,12 @@
       padding: 0.3rem 1rem;
       cursor: pointer;
     }
-    @keyframes flicker {
-  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
-  20%, 24%, 55% { opacity: 0.3; }
-    }
-
   </style>
 </head>
 <body>
   <div id="container">
-  <h1 class="glow">Tetris 8‑Bit</h1>
-  <div id="scoreboard">
+    <h1>Tetris 8-Bit</h1>
+    <div id="scoreboard">
       Current Score: <span id="score">0</span> <br>
       Best Score: <span id="best-score">0</span> by <span id="best-user">N/A</span>
     </div>
